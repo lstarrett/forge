@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: forge
+
+spec:
+  ttlSecondsAfterFinished: 60
+  template:
+    spec:
+
+      # serviceAccountName: forge-s3-workflow-data-access
+
+      volumes:
+        - name: sharedfs
+          # COMMENT OUT emptyDir LINE FOR TESTING WITH WORKFLOW DATA ON LOCAL FILESYSTEM (use emptyDir line if using S3 data)
+          # emptyDir: {}
+          # UNCOMMENT hostPath AND path LINES FOR TETING WITH WORKFLOW DATA ON LOCAL FILESYSTEM (comment out if using S3 data)
+          hostPath:
+            path: /shared
+
+####### UNCOMMENT THESE LINES FOR LOCAL TESTING #######
+        - name: aws-creds
+          secret:
+            secretName: minikube-aws-creds
+      imagePullSecrets:
+        - name: ecr-creds
+#######################################################
+
+      # Using initContainers enforces sequential execution of worker containers,
+      # ensuring each container completes execution before the next is launched
+      initContainers:
+      - name: forge-source
+        image: ${AWS_ACCOUNTID}.dkr.ecr.${AWS_REGION}.amazonaws.com/forge-source
+        volumeMounts:
+          - name: sharedfs
+            mountPath: /shared
+####### UNCOMMENT THESE LINES FOR LOCAL TESTING #######
+          - name: aws-creds
+            mountPath: /root/.aws
+#######################################################
+        workingDir: /workdir
+        command: ["python"]
+        # Use Source and Sink in "bypass" mode to skip any upload/download from S3 and use locally mounted workflow data
+        # args: ["source.py", "--bypass"]
+        args: ["source.py", "--datadir", "/shared/data", "--bucket", "forge-workflow-data-2", "--dataobj", "data.zip"]
+
+      - name: forge-worker
+        image: ${AWS_ACCOUNTID}.dkr.ecr.${AWS_REGION}.amazonaws.com/forge-worker
+        volumeMounts:
+          - name: sharedfs
+            mountPath: /shared
+####### UNCOMMENT THESE LINES FOR LOCAL TESTING #######
+          - name: aws-creds
+            mountPath: /root/.aws
+#######################################################
+        workingDir: /workdir
+        command: ["python"]
+        args: ["worker.py", "--datadir", "/shared/data"]
+
+      # Kubernetes Job spec requires one non-initContainer, so Sink executes last to complete the job
+      containers:
+      - name: forge-sink
+        image: ${AWS_ACCOUNTID}.dkr.ecr.${AWS_REGION}.amazonaws.com/forge-sink
+        volumeMounts:
+          - name: sharedfs
+            mountPath: /shared
+####### UNCOMMENT THESE LINES FOR LOCAL TESTING #######
+          - name: aws-creds
+            mountPath: /root/.aws
+#######################################################
+        workingDir: /workdir
+        command: ["python"]
+        # Use Source and Sink in "bypass" mode to skip any upload/download from S3 and use locally mounted workflow data
+        # args: ["sink.py", "--bypass"]
+        args: ["sink.py", "--datadir", "/shared/data", "--bucket", "forge-workflow-data-2", "--dataobj", "data.zip"]
+
+      # If a container in this Job fails, it will be reported in the logs, but
+      # will not be restarted and the job will report itself failed
+      restartPolicy: Never

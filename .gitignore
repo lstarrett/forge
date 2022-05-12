@@ -1,0 +1,25 @@
+# Typescript and Node build artifacts
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# Vim swap files
+*.swp
+*.swo
+vim_session
+
+# Python venv
+myenv/
+
+# Left off
+.left_off
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
